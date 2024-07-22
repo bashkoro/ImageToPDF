@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
-
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import QFileDialog, QListWidget, QListWidgetItem
+from PyQt5.QtWidgets import QFileDialog
 import cv2
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
+
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -38,17 +37,13 @@ class Ui_MainWindow(object):
         self.label.setObjectName("label")
 
         self.contrastSlider = QtWidgets.QSlider(self.centralwidget)
-        self.contrastSlider.setGeometry(QtCore.QRect(1090, 180, 22, 400))
+        self.contrastSlider.setGeometry(QtCore.QRect(290, 210, 22, 400))
         self.contrastSlider.setOrientation(QtCore.Qt.Vertical)
         self.contrastSlider.setObjectName("contrastSlider")
 
         self.label_2 = QtWidgets.QLabel(self.centralwidget)
-        self.label_2.setGeometry(QtCore.QRect(1070, 600, 58, 16))
+        self.label_2.setGeometry(QtCore.QRect(270, 630, 58, 16))
         self.label_2.setObjectName("label_2")
-
-        self.imageList = QtWidgets.QListWidget(self.centralwidget)
-        self.imageList.setGeometry(QtCore.QRect(20, 10, 340, 860))
-        self.imageList.setObjectName("imageList")
 
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
@@ -63,86 +58,73 @@ class Ui_MainWindow(object):
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
         # Connect Signals and Slots
-        self.loadImageButton.clicked.connect(self.load_images)
+        self.loadImageButton.clicked.connect(self.load_image)
         self.saveButton.clicked.connect(self.save_to_pdf)
-        self.brightSlider.valueChanged.connect(self.update_brightness)
-        self.contrastSlider.valueChanged.connect(self.update_contrast)
-        self.imageList.currentRowChanged.connect(self.display_selected_image)
+        self.brightSlider.valueChanged.connect(self.update_image)
+        self.contrastSlider.valueChanged.connect(self.update_image)
 
-        self.images = []
-        self.processed_images = []
+        self.image = None
+        self.processed_image = None
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "Image to PDF"))
-        self.loadImageButton.setText(_translate("MainWindow", "Load Images"))
+        self.loadImageButton.setText(_translate("MainWindow", "Load Image"))
         self.saveButton.setText(_translate("MainWindow", "Save To PDF"))
         self.label.setText(_translate("MainWindow", "Brightness"))
         self.label_2.setText(_translate("MainWindow", "Contrast"))
 
-    def load_images(self):
+    def load_image(self):
         options = QFileDialog.Options()
-        file_paths, _ = QFileDialog.getOpenFileNames(None, "Open Image Files", "", "Image Files (*.png *.jpg *.jpeg *.bmp)", options=options)
-        if file_paths:
-            self.imageList.clear()
-            self.images = []
-            for file_path in file_paths:
-                image = cv2.imread(file_path)
-                gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                self.images.append((file_path, gray_image))
-                item = QListWidgetItem(file_path)
-                self.imageList.addItem(item)
-            if self.images:
-                self.processed_images = [img[1] for img in self.images]
-                self.display_selected_image(0)  # Display the first image
+        file_path, _ = QFileDialog.getOpenFileName(None, "Open Image File", "", "Image Files (*.png *.jpg *.bmp *.jpeg)",
+                                                   options=options)
+        if file_path:
+            self.image = cv2.imread(file_path)
+            self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
+            self.processed_image = self.image.copy()
+            self.update_image()
 
-    def update_brightness(self):
-        brightness_value = self.brightSlider.value()
-        for i, (_, image) in enumerate(self.images):
-            bright_image = cv2.convertScaleAbs(image, alpha=1, beta=brightness_value)
-            self.processed_images[i] = bright_image
-        self.display_selected_image(self.imageList.currentRow())
+    def update_image(self):
+        if self.image is not None:
+            brightness_value = self.brightSlider.value()
+            contrast_value = self.contrastSlider.value()
 
-    def update_contrast(self):
-        contrast_value = self.contrastSlider.value()
-        for i, (_, image) in enumerate(self.images):
             alpha = contrast_value / 50.0 + 1  # Contrast control (1.0-3.0)
-            beta = 0  # Brightness control (0-100)
-            contrast_image = cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
-            self.processed_images[i] = contrast_image
-        self.display_selected_image(self.imageList.currentRow())
+            beta = brightness_value  # Brightness control (0-100)
 
-    def display_selected_image(self, index):
-        if index >= 0 and index < len(self.processed_images):
-            image = self.processed_images[index]
-            height, width = image.shape
-            bytes_per_line = width
-            q_image = QImage(image.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
-            pixmap = QPixmap.fromImage(q_image)
-            scaled_pixmap = pixmap.scaled(self.imageLabel.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-            self.imageLabel.setPixmap(scaled_pixmap)
+            self.processed_image = cv2.convertScaleAbs(self.image, alpha=alpha, beta=beta)
+            self.update_image_label(self.processed_image)
+
+    def update_image_label(self, image):
+        height, width = image.shape
+        bytes_per_line = width
+        q_image = QImage(image.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
+        pixmap = QPixmap.fromImage(q_image)
+        scaled_pixmap = pixmap.scaled(self.imageLabel.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        self.imageLabel.setPixmap(scaled_pixmap)
 
     def save_to_pdf(self):
-        if self.processed_images:
+        if self.processed_image is not None:
             options = QFileDialog.Options()
             save_path, _ = QFileDialog.getSaveFileName(None, "Save PDF", "", "PDF Files (*.pdf)", options=options)
             if save_path:
-                pdf = canvas.Canvas(save_path, pagesize=A4)
+                # Resize the image to A4 size
                 a4_width, a4_height = A4
-                for img in self.processed_images:
-                    resized_image = cv2.resize(img, (int(a4_width), int(a4_height)))
-                    temp_path = 'temp_image.jpg'
-                    cv2.imwrite(temp_path, resized_image)
-                    pdf.drawImage(temp_path, 0, 0, width=a4_width, height=a4_height)
-                    pdf.showPage()
+                resized_image = cv2.resize(self.processed_image, (int(a4_width), int(a4_height)))
+
+                # Save the image as a temporary file
+                temp_path = 'temp_image.jpg'
+                cv2.imwrite(temp_path, resized_image)
+
+                # Create the PDF and add the resized image
+                pdf = canvas.Canvas(save_path, pagesize=A4)
+                pdf.drawImage(temp_path, 0, 0, width=a4_width, height=a4_height)
                 pdf.save()
-                # Clean up the temporary file
-                import os
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
+
 
 if __name__ == "__main__":
     import sys
+
     app = QtWidgets.QApplication(sys.argv)
     MainWindow = QtWidgets.QMainWindow()
     ui = Ui_MainWindow()
